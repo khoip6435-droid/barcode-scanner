@@ -1,0 +1,3 @@
+import {normalizeBarcode} from './normalizer.js';
+export function buildProductIndex(rows,mapping){if(!mapping.barcode)throw new Error('Chọn cột barcode.');if(!mapping.price)throw new Error('Chọn cột giá.');const index=new Map();let skipped=0,duplicates=0;for(const row of rows){const barcode=normalizeBarcode(row[mapping.barcode]);if(!barcode){skipped++;continue}const product={barcode,name:mapping.name?String(row[mapping.name]??'').trim():'',price:String(row[mapping.price]??'').trim()};if(index.has(barcode))duplicates++;else index.set(barcode,product)}return{index,skipped,duplicates,count:index.size}}
+export function findProduct(index,raw){return index.get(normalizeBarcode(raw))||null}

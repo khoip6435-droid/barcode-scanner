@@ -1,0 +1,1 @@
+export function formatPrice(value){const text=String(value??'').trim();if(!text)return 'Chưa có giá';if(/[đ₫]|vnd|vnđ/i.test(text))return text;const compact=text.replace(/\s/g,'');if(/^-?\d[\d.,]*$/.test(compact)){const number=Number(compact.replace(/[.,]/g,''));if(Number.isFinite(number))return `${number.toLocaleString('vi-VN')}đ`}return text}
