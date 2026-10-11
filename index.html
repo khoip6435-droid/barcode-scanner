@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Barcode Scanner</title>
+
+  <!-- Thư viện quét barcode -->
+  <script src="https://unpkg.com/@zxing/browser@latest"></script>
+
+  <!-- Thư viện đọc Excel / CSV -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      background: #f5f5f5;
+      color: #111;
+    }
+
+    .app {
+      max-width: 600px;
+      margin: auto;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .box {
+      background: white;
+      padding: 18px;
+      margin-bottom: 18px;
+      border-radius: 15px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    h2 {
+      margin-top: 0;
+      font-size: 19px;
+    }
+
+    input[type="file"] {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      background: #eee;
+    }
+
+    video {
+      width: 100%;
+      display: block;
+      border-radius: 12px;
+      background: #000;
+      margin-bottom: 12px;
+    }
+
+    button {
+      width: 100%;
+      padding: 15px;
+      border: none;
+      border-radius: 10px;
+      background: #000;
+      color: white;
+      font-size: 18px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      background: #888;
+    }
+
+    .status {
+      text-align: center;
+      margin-top: 12px;
+      font-size: 16px;
+    }
+
+    .success {
+      color: green;
+    }
+
+    .error {
+      color: red;
+    }
+
+    #result {
+      display: none;
+    }
+
+    .item {
+      padding: 12px 0;
+      border-bottom: 1px solid #eee;
+    }
+
+    .label {
+      font-size: 14px;
+      color: #777;
+    }
+
+    .value {
+      margin-top: 4px;
+      font-size: 19px;
+      font-weight: bold;
+    }
+
+    .price {
+      font-size: 30px;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="app">
+
+  <h1>📷 Quét Barcode</h1>
+
+
+  <!-- ========================= -->
+  <!-- 1. TẢI FILE -->
+  <!-- ========================= -->
+
+  <div class="box">
+
+    <h2>1. Tải CSV / Excel</h2>
+
+    <input
+      type="file"
+      id="fileInput"
+      accept=".csv,.xlsx,.xls"
+    >
+
+    <div
+      id="fileStatus"
+      class="status"
+    >
+      Chưa tải file
+    </div>
+
+  </div>
+
+
+  <!-- ========================= -->
+  <!-- 2. QUÉT BARCODE -->
+  <!-- ========================= -->
+
+  <div class="box">
+
+    <h2>2. Quét Barcode</h2>
+
+    <video
+      id="camera"
+      autoplay
+      playsinline
+    ></video>
+
+    <button id="scanButton">
+      Bắt đầu quét
+    </button>
+
+    <div
+      id="scanStatus"
+      class="status"
+    >
+      Chưa quét
+    </div>
+
+  </div>
+
+
+  <!-- ========================= -->
+  <!-- 3. KẾT QUẢ -->
+  <!-- ========================= -->
+
+  <div
+    class="box"
+    id="result"
+  >
+
+    <h2>3. Sản phẩm</h2>
+
+    <div class="item">
+
+      <div class="label">
+        Barcode
+      </div>
+
+      <div
+        class="value"
+        id="barcode"
+      >
+      </div>
+
+    </div>
+
+
+    <div class="item">
+
+      <div class="label">
+        Tên sản phẩm
+      </div>
+
+      <div
+        class="value"
+        id="productName"
+      >
+      </div>
+
+    </div>
+
+
+    <div class="item">
+
+      <div class="label">
+        Giá
+      </div>
+
+      <div
+        class="value price"
+        id="productPrice"
+      >
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+
+<script>
+
+  // ==========================================
+  // DATABASE SẢN PHẨM
+  // ==========================================
+
+  let products = {};
+
+
+  // ==========================================
+  // LẤY ELEMENT
+  // ==========================================
+
+  const fileInput =
+    document.getElementById("fileInput");
+
+  const fileStatus =
+    document.getElementById("fileStatus");
+
+  const camera =
+    document.getElementById("camera");
+
+  const scanButton =
+    document.getElementById("scanButton");
+
+  const scanStatus =
+    document.getElementById("scanStatus");
+
+  const result =
+    document.getElementById("result");
+
+  const barcodeText =
+    document.getElementById("barcode");
+
+  const productName =
+    document.getElementById("productName");
+
+  const productPrice =
+    document.getElementById("productPrice");
+
+
+  // ==========================================
+  // CHUẨN HÓA TÊN CỘT
+  // ==========================================
+
+  function normalize(text) {
+
+    return String(text)
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "");
+
+  }
+
+
+  // ==========================================
+  // TÌM CỘT
+  // ==========================================
+
+  function findColumn(row, names) {
+
+    const keys = Object.keys(row);
+
+    for (const key of keys) {
+
+      const normalizedKey =
+        normalize(key);
+
+      for (const name of names) {
+
+        if (
+          normalizedKey ===
+          normalize(name)
+        ) {
+
+          return key;
+
+        }
+
+      }
+
+    }
+
+    return null;
+
+  }
+
+
+  // ==========================================
+  // TẢI CSV / EXCEL
+  // ==========================================
+
+  fileInput.addEventListener(
+    "change",
+    function () {
+
+      const file =
+        fileInput.files[0];
+
+      if (!file) {
+        return;
+      }
+
+      fileStatus.textContent =
+        "Đang đọc file...";
+
+      fileStatus.className =
+        "status";
+
+
+      const reader =
+        new FileReader();
+
+
+      reader.onload =
+        function (event) {
+
+          try {
+
+            const data =
+              new Uint8Array(
+                event.target.result
+              );
+
+
+            const workbook =
+              XLSX.read(
+                data,
+                {
+                  type: "array",
+                  raw: false
+                }
+              );
+
+
+            // Lấy sheet đầu tiên
+            const sheetName =
+              workbook.SheetNames[0];
+
+
+            const sheet =
+              workbook.Sheets[sheetName];
+
+
+            // Chuyển Excel/CSV thành bảng
+            const rows =
+              XLSX.utils.sheet_to_json(
+                sheet,
+                {
+                  defval: "",
+                  raw: false
+                }
+              );
+
+
+            if (rows.length === 0) {
+
+              fileStatus.textContent =
+                "❌ File không có dữ liệu";
+
+              fileStatus.className =
+                "status error";
+
+              return;
+
+            }
+
+
+            // ==================================
+            // TÌM CỘT BARCODE
+            // ==================================
+
+            const barcodeColumn =
+              findColumn(
+                rows[0],
+                [
+                  "barcode",
+                  "mã vạch",
+                  "ma vach",
+                  "ean",
+                  "ean13",
+                  "ean-13"
+                ]
+              );
+
+
+            // ==================================
+            // TÌM CỘT TÊN
+            // ==================================
+
+            const nameColumn =
+              findColumn(
+                rows[0],
+                [
+                  "product name",
+                  "product",
+                  "tên sản phẩm",
+                  "ten san pham",
+                  "tên",
+                  "ten",
+                  "name"
+                ]
+              );
+
+
+            // ==================================
+            // TÌM CỘT GIÁ
+            // ==================================
+
+            const priceColumn =
+              findColumn(
+                rows[0],
+                [
+                  "price",
+                  "giá",
+                  "gia",
+                  "sale price",
+                  "giá sale",
+                  "gia sale",
+                  "giá bán",
+                  "gia ban",
+                  "new price",
+                  "giá mới",
+                  "gia moi"
+                ]
+              );
+
+
+            if (!barcodeColumn) {
+
+              fileStatus.textContent =
+                "❌ Không tìm thấy cột Barcode";
+
+              fileStatus.className =
+                "status error";
+
+              return;
+
+            }
+
+
+            if (!priceColumn) {
+
+              fileStatus.textContent =
+                "❌ Không tìm thấy cột Giá";
+
+              fileStatus.className =
+                "status error";
+
+              return;
+
+            }
+
+
+            // ==================================
+            // ĐƯA DỮ LIỆU VÀO DATABASE
+            // ==================================
+
+            products = {};
+
+            let count = 0;
+
+
+            rows.forEach(
+              function (row) {
+
+                let barcode =
+                  String(
+                    row[barcodeColumn] ?? ""
+                  ).trim();
+
+
+                // Excel đôi khi biến barcode
+                // thành 893000000001.0
+                barcode =
+                  barcode.replace(
+                    /\.0$/,
+                    ""
+                  );
+
+
+                if (!barcode) {
+                  return;
+                }
+
+
+                products[barcode] = {
+
+                  name:
+                    nameColumn
+                      ? String(
+                          row[nameColumn] ?? ""
+                        ).trim()
+                      : "",
+
+                  price:
+                    String(
+                      row[priceColumn] ?? ""
+                    ).trim()
+
+                };
+
+
+                count++;
+
+              }
+            );
+
+
+            fileStatus.textContent =
+              "✅ Đã tải " +
+              count +
+              " sản phẩm";
+
+            fileStatus.className =
+              "status success";
+
+
+          }
+          catch (error) {
+
+            console.error(error);
+
+            fileStatus.textContent =
+              "❌ Không đọc được file";
+
+            fileStatus.className =
+              "status error";
+
+          }
+
+        };
+
+
+      reader.readAsArrayBuffer(file);
+
+    }
+  );
+
+
+  // ==========================================
+  // HIỂN THỊ KẾT QUẢ
+  // ==========================================
+
+  function showProduct(barcode) {
+
+    result.style.display =
+      "block";
+
+
+    barcodeText.textContent =
+      barcode;
+
+
+    const product =
+      products[barcode];
+
+
+    if (!product) {
+
+      productName.textContent =
+        "Không tìm thấy";
+
+
+      productPrice.textContent =
+        "Không tìm thấy";
+
+
+      scanStatus.textContent =
+        "⚠️ Barcode không có trong file";
+
+      scanStatus.className =
+        "status error";
+
+      return;
+
+    }
+
+
+    productName.textContent =
+      product.name || "-";
+
+
+    productPrice.textContent =
+      formatPrice(product.price);
+
+
+    scanStatus.textContent =
+      "✅ Đã tìm thấy sản phẩm";
+
+    scanStatus.className =
+      "status success";
+
+  }
+
+
+  // ==========================================
+  // ĐỊNH DẠNG GIÁ
+  // ==========================================
+
+  function formatPrice(value) {
+
+    if (!value) {
+      return "-";
+    }
+
+
+    const text =
+      String(value).trim();
+
+
+    // Nếu file đã có "đ"
+    if (
+      text.includes("đ") ||
+      text.toLowerCase().includes("vnd") ||
+      text.toLowerCase().includes("vnđ")
+    ) {
+
+      return text;
+
+    }
+
+
+    // Chuyển số
+    const number =
+      Number(
+        text
+          .replace(/\s/g, "")
+          .replace(/,/g, "")
+          .replace(/\./g, "")
+      );
+
+
+    if (!isNaN(number)) {
+
+      return (
+        number.toLocaleString("vi-VN") +
+        "đ"
+      );
+
+    }
+
+
+    return text;
+
+  }
+
+
+  // ==========================================
+  // BARCODE SCANNER
+  // ==========================================
+
+  const codeReader =
+    new ZXingBrowser.BrowserMultiFormatReader();
+
+
+  let scanning = false;
+
+
+  scanButton.addEventListener(
+    "click",
+    async function () {
+
+      if (scanning) {
+        return;
+      }
+
+
+      // Phải tải file trước
+      if (
+        Object.keys(products).length === 0
+      ) {
+
+        scanStatus.textContent =
+          "⚠️ Hãy tải CSV/Excel trước";
+
+        scanStatus.className =
+          "status error";
+
+        return;
+
+      }
+
+
+      scanStatus.textContent =
+        "Đang mở camera...";
+
+
+      try {
+
+        const devices =
+          await ZXingBrowser
+            .BrowserCodeReader
+            .listVideoInputDevices();
+
+
+        if (devices.length === 0) {
+
+          scanStatus.textContent =
+            "❌ Không tìm thấy camera";
+
+          return;
+
+        }
+
+
+        // Ưu tiên camera sau
+        const device =
+          devices[devices.length - 1];
+
+
+        scanning = true;
+
+        scanButton.textContent =
+          "Đang quét...";
+
+
+        codeReader.decodeFromVideoDevice(
+
+          device.deviceId,
+
+          camera,
+
+          function (resultCode) {
+
+            if (!resultCode) {
+              return;
+            }
+
+
+            const barcode =
+              resultCode
+                .getText()
+                .trim();
+
+
+            showProduct(barcode);
+
+          }
+
+        );
+
+      }
+      catch (error) {
+
+        console.error(error);
+
+        scanStatus.textContent =
+          "❌ Không thể mở camera";
+
+        scanStatus.className =
+          "status error";
+
+      }
+
+    }
+  );
+
+</script>
+
+</body>
+</html>
